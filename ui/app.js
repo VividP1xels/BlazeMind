@@ -336,7 +336,8 @@ async function pageSettings() {
         <label class="f"><span>AI service</span><select id="s-prov">${Object.entries(ai.providers).map(([k, p]) => `<option value="${k}" ${k === prov ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select></label>
         <div id="s-provbox"></div>
         <label class="switch"><input type="checkbox" id="s-echo" ${ai.echoToGame ? 'checked' : ''}> Show the AI's replies in Minecraft chat while I play</label>
-        <div class="row" style="margin-top:16px"><button class="btn hot" id="s-ai-save">Save AI settings</button><button class="btn" id="s-ai-test">Test</button></div>
+        <div class="row" style="margin-top:16px"><button class="btn hot" id="s-ai-save">Save AI settings</button><button class="btn" id="s-ai-check">Check key</button><button class="btn" id="s-ai-test">Test chat</button></div>
+        <p class="tiny" id="s-ai-result"></p>
         <p class="tiny" style="margin-top:14px">In-game AI (BlazeMind Bridge mod) is built for Minecraft ${esc(bridges.join(', ') || '(none in this build)')} on Fabric and Quilt. The launcher adds it for you.</p>
       </div>
       <div class="card"><h3 style="font-size:16px">Minecraft</h3>
@@ -366,6 +367,11 @@ async function pageSettings() {
     await lab.ai.saveSettings(d); refreshMindHeader();
   };
   $('#s-ai-save').onclick = async () => { await saveAI(); toast('AI settings saved', 'good'); pageSettings(); };
+  $('#s-ai-check').onclick = async () => {
+    const out = $('#s-ai-result'); out.className = 'tiny'; out.textContent = 'Checking…';
+    try { await saveAI(); const r = await lab.ai.checkKey(); out.className = r.ok ? 'tiny' : 'tiny err'; out.style.color = r.ok ? 'var(--ok)' : ''; out.textContent = (r.ok ? '✓ ' : '✕ ') + r.text; }
+    catch (e) { out.className = 'tiny err'; out.textContent = errText(e); }
+  };
   $('#s-ai-test').onclick = async () => { await saveAI(); showMind(); askAI('Say hi in one short sentence and tell me which AI model you are.'); };
   $('#s-save').onclick = async () => { await lab.setSettings({ ramMB: Number($('#s-ram').value) || 4096, hideOnPlay: $('#s-hide').checked }); toast('Saved', 'good'); };
   $('#s-out').onclick = async () => { await lab.logout(); location.reload(); };

@@ -195,6 +195,7 @@ contextBridge.exposeInMainWorld('lab', {
     saveSettings: d => invoke('ai:saveSettings', d),
     ask: text => invoke('ai:ask', text),
     reset: () => invoke('ai:reset'),
+    checkKey: () => invoke('ai:checkKey'),
     games: () => invoke('ai:games'),
     bridgeVersions: () => invoke('ai:bridgeVersions'),
     onEvent: on('ai:event'),

@@ -16,6 +16,8 @@ const PROVIDERS = {
   custom: { name: 'Other (OpenAI-compatible)', base: '', model: '', needsKey: false, keyHint: 'Key, if your server needs one' },
 };
 
+const cleanKey = k => String(k || '').replace(/^\s*(bearer|x-api-key:?)\s+/i, '').replace(/["'`\s]/g, '');
+
 module.exports = function setupAI(d) {
   const { ipcMain, invoke, readInstance, instDir, readStore, writeStore, saveSecret, loadSecret, send, packFormat, installModrinth, writeInstance } = d;
 
@@ -36,7 +38,7 @@ module.exports = function setupAI(d) {
     if (typeof p.model === 'string') next.models[prov] = p.model.trim().slice(0, 100);
     if (typeof p.base === 'string') next.bases[prov] = p.base.trim().slice(0, 300);
     if ('echoToGame' in p) next.echoToGame = !!p.echoToGame;
-    if (typeof p.key === 'string') saveSecret('aiKey-' + prov, p.key.trim());
+    if (typeof p.key === 'string') saveSecret('aiKey-' + prov, cleanKey(p.key));
     writeStore({ ai: next });
     if (convo.provider !== prov) resetConvo();
     return true;
@@ -296,11 +298,46 @@ module.exports = function setupAI(d) {
 
   function friendlyError(e) {
     const s = String(e?.message || e);
-    if (e?.status === 401 || /401|invalid.*key|unauthori[sz]ed|authentication/i.test(s)) return 'The AI key was rejected. Check it in Settings → AI.';
-    if (e?.status === 429 || /429|rate limit|quota/i.test(s)) return 'The AI service says you\'ve hit a limit or run out of credit. Wait a bit or check your account.';
+    if (e?.blaze) return s;
+    if (e?.status === 401) return `The AI service rejected the key (401). It said: ${apiMessage(e)}`;
+    if (e?.status === 403) return `The AI service refused (403): ${apiMessage(e)}`;
+    if (e?.status === 429) return 'The AI service says you\'ve hit a limit or run out of credit. Wait a bit or check your account.';
     if (/ECONNREFUSED.*11434|11434/.test(s)) return 'Ollama isn\'t running. Start Ollama, or pick another AI in Settings → AI.';
-    if (/fetch failed|ENOTFOUND|EAI_AGAIN|ETIMEDOUT|network/i.test(s)) return 'Can\'t reach the AI service. You\'re offline? Ollama works without internet.';
-    return s.slice(0, 400);
+    if (/fetch failed|ENOTFOUND|EAI_AGAIN|ETIMEDOUT|ECONNREFUSED|Connection error/i.test(s)) return 'Can\'t reach the AI service. Are you offline? (Ollama works without internet.)';
+    return (e?.status ? `Error ${e.status}: ` : '') + apiMessage(e);
+  }
+  // Pull the service's own explanation out of an SDK or HTTP error
+  function apiMessage(e) {
+    const m = e?.error?.error?.message || e?.error?.message || e?.message || String(e);
+    return String(m).replace(/^\d{3}\s+/, '').slice(0, 400);
+  }
+
+  // Settings → AI → "Check key": a free call that only lists models
+  ipcMain.handle('ai:checkKey', async () => {
+    const c = cfg(), key = loadSecret('aiKey-' + c.provider) || '';
+    if (PROVIDERS[c.provider].needsKey && !key) return { ok: false, text: 'No key saved for this AI yet.' };
+    try {
+      if (c.provider === 'claude') {
+        if (!/^sk-ant-api/.test(key)) return { ok: false, text: keyShapeHint(key) };
+        const sdk = require('@anthropic-ai/sdk'); const Anthropic = sdk.default || sdk;
+        const client = new Anthropic({ apiKey: key, authToken: null });
+        const models = []; for await (const m of client.models.list({ limit: 100 })) models.push(m.id);
+        const has = models.includes(c.model);
+        return { ok: true, text: `Key works. ${has ? `Model ${c.model} is available.` : `But your account doesn't list "${c.model}". Available: ${models.slice(0, 8).join(', ')}`}` };
+      }
+      const res = await fetch(c.base.replace(/\/+$/, '') + '/models', { headers: key ? { Authorization: `Bearer ${key}` } : {} });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) return { ok: false, text: `Error ${res.status}: ${j?.error?.message || 'the service refused'}` };
+      const ids = (j.data || []).map(m => m.id);
+      return { ok: true, text: `Key works.${ids.length && !ids.includes(c.model) ? ` "${c.model}" isn't in your list. Some available: ${ids.slice(0, 8).join(', ')}` : ''}` };
+    } catch (e) { return { ok: false, text: friendlyError(e) }; }
+  });
+  function keyShapeHint(key) {
+    if (/^sk-ant-oat/.test(key)) return 'That\'s a Claude subscription login token (sk-ant-oat…), not an API key. Make an API key at console.anthropic.com → API keys (it starts with sk-ant-api).';
+    if (/^sk-ant-admin/.test(key)) return 'That\'s an Admin key. Make a normal API key at console.anthropic.com → API keys (it starts with sk-ant-api).';
+    if (/^sk-(proj-)?[A-Za-z0-9]/.test(key) && !/^sk-ant/.test(key)) return 'That looks like an OpenAI (ChatGPT) key. Pick "ChatGPT (OpenAI)" as the AI service, or make a Claude key at console.anthropic.com.';
+    if (/^AIza/.test(key)) return 'That looks like a Google Gemini key. Pick "Gemini (Google)" as the AI service.';
+    return 'That doesn\'t look like a Claude API key. Claude keys start with sk-ant-api and come from console.anthropic.com → API keys.';
   }
 
   async function runTool(name, input) {
@@ -340,24 +377,34 @@ module.exports = function setupAI(d) {
   async function turnClaude(userText, c, key) {
     const sdk = require('@anthropic-ai/sdk');
     const Anthropic = sdk.default || sdk;
-    const client = new Anthropic({ apiKey: key });
+    const client = new Anthropic({ apiKey: key, authToken: null });
+    if (!/^sk-ant-api/.test(key)) throw Object.assign(new Error(keyShapeHint(key)), { blaze: true });
+    const start = convo.messages.length;
     convo.messages.push({ role: 'user', content: userText });
     const tools = TOOLS.map(t => ({ name: t.name, description: t.description, input_schema: t.input_schema }));
     const current = /^claude-(opus|sonnet|haiku|fable)-5/.test(c.model);
-    const fallbackOk = /^claude-(opus-5-5|sonnet-5-5|fable-5-[12]|opus-5$)/.test(c.model);
+    let fallbackOk = /^claude-(opus-5-5|sonnet-5-5|fable-5-[12]|opus-5$)/.test(c.model);
     let final = '';
     for (let step = 0; step < 30; step++) {
       const params = { model: c.model, max_tokens: 16000, system: SYSTEM, tools, messages: convo.messages, ...(current ? { output_config: { effort: 'medium' } } : {}) };
       let r;
       try {
-        r = fallbackOk
-          ? await client.beta.messages.create({ ...params, betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' })
-          : await client.messages.create(params);
+        try {
+          r = fallbackOk
+            ? await client.beta.messages.create({ ...params, betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' })
+            : await client.messages.create(params);
+        } catch (e) {
+          // Some accounts don't have the fallback option yet: try once more without it
+          if (fallbackOk && e instanceof Anthropic.BadRequestError && /fallback|beta/i.test(apiMessage(e))) { fallbackOk = false; r = await client.messages.create(params); }
+          else throw e;
+        }
       } catch (e) {
-        convo.messages.pop();
-        if (e instanceof Anthropic.AuthenticationError) throw Object.assign(new Error('The Claude key was rejected. Check it in Settings → AI.'), { status: 401 });
-        if (e instanceof Anthropic.RateLimitError) throw Object.assign(new Error('Claude is rate-limited right now. Try again in a moment.'), { status: 429 });
-        if (e instanceof Anthropic.NotFoundError) throw new Error(`Claude doesn't know the model "${c.model}". Change it in Settings → AI.`);
+        convo.messages.length = start;
+        if (e instanceof Anthropic.AuthenticationError) throw Object.assign(new Error(`Anthropic rejected the key: ${apiMessage(e)}. Check it in Settings → AI → Check key (make sure you copied the whole key, and that it wasn't deleted).`), { blaze: true });
+        if (e instanceof Anthropic.PermissionDeniedError) throw Object.assign(new Error(`Anthropic refused: ${apiMessage(e)}`), { blaze: true });
+        if (e instanceof Anthropic.RateLimitError) throw Object.assign(new Error('Claude is rate-limited right now. Try again in a moment.'), { blaze: true });
+        if (e instanceof Anthropic.NotFoundError) throw Object.assign(new Error(`Claude doesn't know the model "${c.model}". Change it in Settings → AI.`), { blaze: true });
+        if (e instanceof Anthropic.BadRequestError && /credit balance/i.test(apiMessage(e))) throw Object.assign(new Error('Your Anthropic account has no credit. Add some at console.anthropic.com → Billing.'), { blaze: true });
         throw e;
       }
       convo.messages.push({ role: 'assistant', content: r.content });
@@ -379,6 +426,7 @@ module.exports = function setupAI(d) {
   // ChatGPT, Gemini, Ollama and other OpenAI-compatible servers
   async function turnOpenAI(userText, c, key) {
     if (!c.base) throw new Error('Set the server address in Settings → AI.');
+    const start = convo.messages.length;
     convo.messages.push({ role: 'user', content: userText });
     const tools = TOOLS.map(t => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.input_schema } }));
     let final = '';
@@ -389,7 +437,7 @@ module.exports = function setupAI(d) {
         body: JSON.stringify({ model: c.model, messages: [{ role: 'system', content: SYSTEM }, ...convo.messages], tools }),
       });
       const j = await res.json().catch(() => ({}));
-      if (!res.ok) { convo.messages.pop(); throw Object.assign(new Error(j?.error?.message || `The AI service answered ${res.status}.`), { status: res.status }); }
+      if (!res.ok) { convo.messages.length = start; throw Object.assign(new Error(j?.error?.message || `The AI service answered ${res.status}.`), { status: res.status }); }
       const msg = j.choices?.[0]?.message;
       if (!msg) throw new Error('The AI sent an empty answer.');
       convo.messages.push({ role: 'assistant', content: msg.content || '', ...(msg.tool_calls?.length ? { tool_calls: msg.tool_calls } : {}) });
