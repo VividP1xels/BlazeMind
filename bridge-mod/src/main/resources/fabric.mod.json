@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "blazemind_bridge",
+  "version": "${version}",
+  "name": "BlazeMind Bridge",
+  "description": "Lets the BlazeMind launcher's AI act in your game: type /ai <message>.",
+  "authors": ["VividP1xels"],
+  "contact": { "sources": "https://github.com/VividP1xels/blazemind" },
+  "license": "MIT",
+  "icon": "assets/blazemind_bridge/icon.png",
+  "environment": "client",
+  "entrypoints": { "client": ["dev.blazemind.bridge.BlazeMindBridge"] },
+  "depends": { "fabricloader": ">=0.14.0", "fabric-api": "*", "minecraft": "${mc}" }
+}

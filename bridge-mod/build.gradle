@@ -1,0 +1,25 @@
+plugins {
+    id 'fabric-loom' version "${loom_version}"
+}
+
+version = '1.0.0'
+group = 'dev.blazemind'
+base { archivesName = "blazemind-bridge-${project.minecraft_version}" }
+
+repositories { mavenCentral() }
+
+dependencies {
+    minecraft "com.mojang:minecraft:${project.minecraft_version}"
+    mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
+    modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
+    modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+}
+
+processResources {
+    inputs.property 'version', project.version
+    inputs.property 'mc', project.minecraft_version
+    filesMatching('fabric.mod.json') { expand 'version': project.version, 'mc': project.minecraft_version }
+}
+
+tasks.withType(JavaCompile).configureEach { it.options.release = Integer.parseInt(project.java_release) }
+java { withSourcesJar() }
