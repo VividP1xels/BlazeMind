@@ -190,6 +190,8 @@ contextBridge.exposeInMainWorld('lab', {
   onLaunchLog: on('launch:log'),
   onLaunchClosed: on('launch:closed'),
   onInstancesChanged: on('instances:changed'),
+  repairInstance: d => invoke('repair:instance', d),
+  repairLauncher: d => invoke('repair:launcher', d),
   ai: {
     settings: () => invoke('ai:settings'),
     saveSettings: d => invoke('ai:saveSettings', d),

@@ -22,8 +22,11 @@ The in-game part is the **BlazeMind Bridge** mod (Fabric and Quilt). BlazeMind a
 
 - **Library:** instances for Vanilla, Fabric, Quilt, Forge and NeoForge, each with its own mods and worlds.
 - **Add content:** search Modrinth for mods, resource packs, shaders and data packs that fit the instance. Required mods come too.
-- **Discover:** install Modrinth modpacks as new instances, or import a `.mrpack` / CurseForge `.zip`.
+- **Discover:** browse modpacks, mods, resource packs, texture packs, shaders, data packs and worlds from Modrinth and CurseForge, with version, loader and sort filters, full details and older versions.
 - **Create:** a modpack builder (pick a version, loader and mods), plus AI makers for data packs, resource packs, builds, custom items and world control.
+- **Instances:** worlds (play straight into one, back up, import, delete), screenshots, mod update checker, duplicate, speed boost, safe mode.
+- **Repair:** fix a broken instance (re-checks every mod, re-downloads game files and the mod loader, clears stuck locks, resets video settings) or the whole launcher (caches, Java, game files, sign-in). Worlds are never touched.
+- **Servers:** host Paper, Vanilla, Fabric, Forge or NeoForge servers on your PC, with a live console. The AI can run commands on them too.
 - **Offline:** after you've signed in once, BlazeMind works without internet. Play instances you've played before, make packs, and use Ollama as your AI.
 
 ## Downloads

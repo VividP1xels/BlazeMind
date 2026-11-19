@@ -3244,6 +3244,71 @@ async function dailyBackups() {
 app.whenReady().then(() => { setTimeout(() => dailyBackups().catch(() => {}), 60000); setInterval(() => dailyBackups().catch(() => {}), 3600000); });
 ipcMain.handle('servers:dailyNow', () => dailyBackups());
 
+// ---------- Repair: fix a broken instance or launcher ----------
+ipcMain.handle('repair:instance', async (_e, { id, gameFiles = true, mods = true, loader = true, options = false, cleanup = true }) => {
+  if (running.has(id)) throw new Error('Close Minecraft first.');
+  const inst = await readInstance(id);
+  const report = [];
+  const vdir = path.join(MC_ROOT(), 'versions');
+  if (gameFiles) {
+    // Minecraft's own files for this version download again on the next Play
+    await fsp.rm(path.join(vdir, inst.mcVersion), { recursive: true, force: true });
+    report.push(`Minecraft ${inst.mcVersion} game files will download fresh on the next Play.`);
+  }
+  if (loader && inst.loader !== 'vanilla') {
+    let n = 0;
+    for (const d of fs.existsSync(vdir) ? await fsp.readdir(vdir) : []) {
+      const hit = (inst.loader === 'fabric' || inst.loader === 'quilt') ? d.startsWith(`${inst.loader}-loader-`) && d.endsWith(`-${inst.mcVersion}`) : d.toLowerCase().includes(inst.loader) && d.includes(inst.mcVersion);
+      if (hit) { await fsp.rm(path.join(vdir, d), { recursive: true, force: true }); n++; }
+    }
+    if (inst.loader === 'forge' || inst.loader === 'neoforge') {
+      const idir = path.join(MC_ROOT(), 'installers');
+      for (const f of await fsp.readdir(idir).catch(() => [])) if (f.startsWith(`${inst.loader}-${inst.mcVersion}-`)) { await fsp.rm(path.join(idir, f), { force: true }); n++; }
+    }
+    report.push(n ? `${LOADER_NAME_MAIN[inst.loader]} will be set up again on the next Play.` : `${LOADER_NAME_MAIN[inst.loader]} setup was already clean.`);
+  }
+  if (mods) {
+    let fixed = 0, gone = 0, ok = 0;
+    const keep = [];
+    for (const m of inst.mods || []) {
+      const dir = path.join(instDir(id), TYPES[typeOf(m.type)]?.dir || 'mods');
+      const file = path.join(dir, m.file), off = file + '.disabled';
+      const have = fs.existsSync(file) ? file : fs.existsSync(off) ? off : null;
+      let good = !!have;
+      if (have && m.sha1) { try { good = sha('sha1', await fsp.readFile(have)) === m.sha1; } catch { good = false; } }
+      if (good) { ok++; keep.push(m); continue; }
+      if (m.url) {
+        try { await fsp.mkdir(dir, { recursive: true }); await download(m.url, m.disabled ? off : file); fixed++; keep.push(m); continue; } catch {}
+      }
+      gone++; // can't get it back: take it off the list so the launcher stops expecting it
+    }
+    inst.mods = keep;
+    await writeInstance(inst);
+    report.push(`Add-ons: ${ok} fine, ${fixed} downloaded again${gone ? `, ${gone} missing and removed from the list` : ''}.`);
+  }
+  if (options) {
+    const f = path.join(instDir(id), 'options.txt');
+    if (fs.existsSync(f)) { await fsp.rename(f, f + `.backup-${Date.now()}`); report.push('Video and control settings reset (old ones saved as options.txt.backup).'); }
+  }
+  if (cleanup) {
+    for (const f of await fsp.readdir(path.join(instDir(id), 'mods')).catch(() => [])) {
+      if (f.endsWith('.p1xsafe')) await fsp.rename(path.join(instDir(id), 'mods', f), path.join(instDir(id), 'mods', f.slice(0, -'.p1xsafe'.length))).catch(() => {});
+    }
+    for (const w of await fsp.readdir(path.join(instDir(id), 'saves')).catch(() => [])) await fsp.rm(path.join(instDir(id), 'saves', w, 'session.lock'), { force: true }).catch(() => {});
+    report.push('Cleared stuck lock files and leftovers from safe mode.');
+  }
+  return report;
+});
+ipcMain.handle('repair:launcher', async (_e, { cache = true, java = false, gameFiles = false, signIn = false }) => {
+  if (running.size) throw new Error('Close Minecraft first.');
+  const report = [];
+  if (cache) { await fsp.rm(CACHE(), { recursive: true, force: true }); manifestCache = null; catalog = null; report.push('Cleared saved lists, pictures and downloads (they come back when needed).'); }
+  if (java) { await fsp.rm(JAVA_ROOT(), { recursive: true, force: true }); report.push('Java will download fresh on the next Play.'); }
+  if (gameFiles) { await fsp.rm(MC_ROOT(), { recursive: true, force: true }); report.push('All Minecraft game files will download fresh on the next Play. Your instances, worlds and mods are untouched.'); }
+  if (signIn) { currentUser = null; writeStore({ msRefresh: null, mcAuth: null }); report.push('Signed out. Sign in again to refresh your Microsoft login.'); }
+  return report;
+});
+
 // ---------- BlazeMind AI ----------
 AI = require('./ai')({ ipcMain, invoke, readInstance, writeInstance, instDir, readStore, writeStore, saveSecret, loadSecret, send, packFormat, installModrinth, newerOrSame, running });
 ipcMain.handle('ai:bridgeVersions', () => AI.bridgeVersions());
