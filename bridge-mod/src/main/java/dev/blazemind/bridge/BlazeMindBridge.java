@@ -17,6 +17,7 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.command.CommandOutput;
 import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.server.world.ServerWorld;
 import net.minecraft.text.Text;
 import net.minecraft.util.WorldSavePath;
 
@@ -187,7 +188,7 @@ public class BlazeMindBridge implements ClientModInitializer {
                         r.addProperty("command", cmd);
                         try {
                             ServerCommandSource src = p != null
-                                    ? new ServerCommandSource(o, p.getPos(), p.getRotationClient(), p.getServerWorld(), 4,
+                                    ? new ServerCommandSource(o, p.getPos(), p.getRotationClient(), (ServerWorld) p.getWorld(), 4,
                                         p.getName().getString(), p.getDisplayName(), server, p)
                                     : server.getCommandSource();
                             server.getCommandManager().executeWithPrefix(src, cmd.startsWith("/") ? cmd.substring(1) : cmd);
