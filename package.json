@@ -1,0 +1,109 @@
+{
+  "name": "blazemind",
+  "version": "1.0.0",
+  "description": "BlazeMind \u2014 a modding-first Minecraft launcher by VividP1xels",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder",
+    "dist:win": "electron-builder --win",
+    "dist:mac": "electron-builder --mac",
+    "dist:linux": "electron-builder --linux"
+  },
+  "author": {
+    "name": "VividP1xels",
+    "email": "VividP1xels@users.noreply.github.com"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "adm-zip": "^0.6.1",
+    "minecraft-launcher-core": "^3.18.2",
+    "msmc": "^5.0.5",
+    "tar": "^6.2.1"
+  },
+  "devDependencies": {
+    "codemirror": "^5.65.18",
+    "electron": "^45.3.2",
+    "electron-builder": "^26.18.0",
+    "peerjs": "^1.5.5"
+  },
+  "productName": "BlazeMind",
+  "build": {
+    "appId": "com.vividp1xels.blazemind",
+    "productName": "BlazeMind",
+    "icon": "renderer/icon.png",
+    "files": [
+      "main.js",
+      "preload.js",
+      "renderer/**",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "BlazeMind-Setup.${ext}"
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "universal"
+          ]
+        }
+      ],
+      "category": "public.app-category.games",
+      "identity": "-",
+      "artifactName": "BlazeMind-Mac.${ext}"
+    },
+    "linux": {
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "deb",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "category": "Game",
+      "maintainer": "VividP1xels",
+      "artifactName": "BlazeMind-Linux.${ext}"
+    },
+    "portable": {
+      "artifactName": "BlazeMind-Portable.${ext}"
+    },
+    "dmg": {
+      "title": "BlazeMind"
+    },
+    "deb": {
+      "depends": [
+        "libnss3",
+        "libgtk-3-0",
+        "libxss1"
+      ]
+    }
+  },
+  "homepage": "https://github.com/VividP1xels/blazemind"
+}
