@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' https: data: p1xicon:; connect-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self'">
+  <title>BlazeMind</title>
+  <link rel="stylesheet" href="fonts.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="embers" aria-hidden="true"></div>
+
+  <!-- Sign in -->
+  <section id="login" class="login hidden">
+    <div class="login-box">
+      <div class="login-flame" id="login-flame"></div>
+      <h1 class="wordmark">BLAZE<b>MIND</b></h1>
+      <p class="sub">The Minecraft launcher with an AI that can do anything in your game.</p>
+      <button class="btn hot big" id="btn-login">Sign in with Microsoft</button>
+      <p class="tiny">You need a Microsoft account that owns Minecraft: Java Edition. After the first sign-in, BlazeMind also works offline.</p>
+      <p class="tiny err hidden" id="login-err"></p>
+    </div>
+  </section>
+
+  <!-- App -->
+  <div id="app" class="app hidden">
+    <nav class="rail">
+      <div class="rail-logo" id="rail-logo" title="BlazeMind"></div>
+      <button class="rail-btn" data-page="home" title="Home"><i>⌂</i><span>Home</span></button>
+      <button class="rail-btn" data-page="library" title="Library"><i>▦</i><span>Library</span></button>
+      <button class="rail-btn" data-page="discover" title="Discover"><i>✦</i><span>Discover</span></button>
+      <button class="rail-btn" data-page="create" title="Create"><i>⚒</i><span>Create</span></button>
+      <button class="rail-btn" data-page="settings" title="Settings"><i>⚙</i><span>Settings</span></button>
+      <div class="rail-fill"></div>
+      <div class="net" id="net" title="Internet"></div>
+      <img class="rail-me" id="me-face" alt="" title="">
+    </nav>
+
+    <main class="page" id="page"></main>
+
+    <aside class="mind" id="mind">
+      <header class="mind-head">
+        <div class="mind-title"><span class="orb" id="orb"></span><b>Mind</b><small id="mind-prov"></small></div>
+        <div class="mind-actions">
+          <span class="pill" id="mind-game" title="In-game AI">Game: off</span>
+          <button class="ghost" id="mind-new" title="New chat">＋</button>
+          <button class="ghost" id="mind-toggle" title="Hide">⟩</button>
+        </div>
+      </header>
+      <div class="mind-feed" id="feed">
+        <div class="mind-hello">
+          <div class="mini-flame" id="hello-flame"></div>
+          <p><b>Ask me for anything.</b> I can make instances, install mods and modpacks, build in your world, spawn things, write data packs and paint textures, all while you play.</p>
+          <p class="tiny">In Minecraft, type <code>/ai</code> and your message.</p>
+        </div>
+      </div>
+      <form class="mind-input" id="mind-form">
+        <textarea id="mind-text" rows="2" placeholder="Tell BlazeMind what to do…"></textarea>
+        <button class="btn hot send" title="Send">➤</button>
+      </form>
+    </aside>
+    <button class="mind-tab hidden" id="mind-tab">Mind ⟨</button>
+  </div>
+
+  <div class="toasts" id="toasts"></div>
+  <div class="modal hidden" id="modal"><div class="modal-card" id="modal-card"></div></div>
+
+  <script src="art.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

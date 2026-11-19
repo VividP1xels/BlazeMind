@@ -10,6 +10,11 @@ const { Auth } = require('msmc');
 const { Client } = require('minecraft-launcher-core');
 const AdmZip = require('adm-zip');
 const tar = require('tar');
+// Keep a list of every IPC handler so the AI can use the same actions as the buttons
+const HANDLERS = new Map();
+{ const real = ipcMain.handle.bind(ipcMain); ipcMain.handle = (ch, fn) => { HANDLERS.set(ch, fn); return real(ch, fn); }; }
+const invoke = (ch, ...args) => { const h = HANDLERS.get(ch); if (!h) throw new Error('Unknown action ' + ch); return h({ sender: null }, ...args); };
+let AI = null;
 
 const UA = 'BlazeMind-Launcher/1.0 (custom Minecraft launcher)';
 const DATA = () => app.getPath('userData');
@@ -47,19 +52,23 @@ function loadSecret(key) {
   try { return s.enc ? safeStorage.decryptString(Buffer.from(s.v, 'base64')) : s.v; } catch { return null; }
 }
 
-const send = (ch, data) => win && !win.isDestroyed() && win.webContents.send(ch, data);
+const send = (ch, data) => {
+  if (ch === 'launch:log' && AI) AI.onLog(data);
+  if (ch === 'launch:closed' && AI) AI.onClosed(data?.id);
+  return win && !win.isDestroyed() && win.webContents.send(ch, data);
+};
 
 // ---------- window ----------
 function createWindow() {
   win = new BrowserWindow({
     width: 1240, height: 780, minWidth: 980, minHeight: 640,
-    backgroundColor: '#0d0b14',
+    backgroundColor: '#120b09',
     title: 'BlazeMind',
-    icon: path.join(__dirname, 'renderer', 'icon.png'),
+    icon: path.join(__dirname, 'ui', 'icon.png'),
     autoHideMenuBar: true,
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false },
   });
-  win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
+  win.loadFile(path.join(__dirname, 'ui', 'index.html'));
   win.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: 'deny' }; });
 }
 protocol.registerSchemesAsPrivileged([{ scheme: 'p1xicon', privileges: { standard: true, secure: true, supportFetchAPI: true } }, { scheme: 'p1xshot', privileges: { standard: true, secure: true, supportFetchAPI: true } }, { scheme: 'p1xmedia', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } }]);
@@ -590,7 +599,7 @@ function downloadFromCurseforgePage(inst, mod, f, type = 'mod', toDir) {
     const modsDir = toDir || path.join(rootOf(inst), dirFor(inst, type));
     const page = `${mod.links?.websiteUrl || `https://www.curseforge.com/minecraft/mc-mods/${mod.slug}`}/download/${f.id}`;
     const dl = new BrowserWindow({
-      parent: win, width: 980, height: 720, autoHideMenuBar: true, backgroundColor: '#0d0b14',
+      parent: win, width: 980, height: 720, autoHideMenuBar: true, backgroundColor: '#120b09',
       title: `Downloading ${mod.name} from CurseForge — BlazeMind`,
       webPreferences: { partition: 'persist:curseforge', contextIsolation: true, sandbox: true },
     });
@@ -818,6 +827,11 @@ ipcMain.handle('game:launch', async (_e, id) => {
     try { const i2 = await readInstance(id); i2.playtime = (i2.playtime || 0) + Math.max(0, Date.now() - startedAt); await writeInstance(i2); } catch {}
     send('launch:closed', { id, code });
   });
+  try {
+    const b = await AI.prepareLaunch(inst);
+    if (b.why) send('launch:log', { id, line: `[BlazeMind AI] ${b.why}` });
+    else send('launch:log', { id, line: '[BlazeMind AI] In-game AI ready: type /ai <message> in Minecraft.' });
+  } catch (e) { send('launch:log', { id, line: `[BlazeMind AI] Couldn't set up the in-game AI: ${e.message}` }); }
   const proc = await launcher.launch({
     root: MC_ROOT(),
     authorization: currentUser,
@@ -2483,7 +2497,7 @@ const advSend = (ch, d) => advWin && !advWin.isDestroyed() && advWin.webContents
 ipcMain.handle('adv:open', () => {
   if (advWin && !advWin.isDestroyed()) { advWin.focus(); return true; }
   advWin = new BrowserWindow({
-    width: 1360, height: 860, minWidth: 1000, minHeight: 640, backgroundColor: '#0d0b14', title: 'BlazeMind: Advanced mode',
+    width: 1360, height: 860, minWidth: 1000, minHeight: 640, backgroundColor: '#120b09', title: 'BlazeMind: Advanced mode',
     icon: path.join(__dirname, 'renderer', 'icon.png'), autoHideMenuBar: true,
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false },
   });
@@ -3229,3 +3243,7 @@ async function dailyBackups() {
 }
 app.whenReady().then(() => { setTimeout(() => dailyBackups().catch(() => {}), 60000); setInterval(() => dailyBackups().catch(() => {}), 3600000); });
 ipcMain.handle('servers:dailyNow', () => dailyBackups());
+
+// ---------- BlazeMind AI ----------
+AI = require('./ai')({ ipcMain, invoke, readInstance, writeInstance, instDir, readStore, writeStore, saveSecret, loadSecret, send, packFormat, installModrinth, newerOrSame, running });
+ipcMain.handle('ai:bridgeVersions', () => AI.bridgeVersions());

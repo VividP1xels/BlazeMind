@@ -189,4 +189,15 @@ contextBridge.exposeInMainWorld('lab', {
   onLaunchStatus: on('launch:status'),
   onLaunchLog: on('launch:log'),
   onLaunchClosed: on('launch:closed'),
+  onInstancesChanged: on('instances:changed'),
+  ai: {
+    settings: () => invoke('ai:settings'),
+    saveSettings: d => invoke('ai:saveSettings', d),
+    ask: text => invoke('ai:ask', text),
+    reset: () => invoke('ai:reset'),
+    games: () => invoke('ai:games'),
+    bridgeVersions: () => invoke('ai:bridgeVersions'),
+    onEvent: on('ai:event'),
+    onGame: on('ai:game'),
+  },
 });

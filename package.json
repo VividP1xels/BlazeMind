@@ -16,6 +16,7 @@
   },
   "license": "MIT",
   "dependencies": {
+    "@anthropic-ai/sdk": "^1.10.0",
     "adm-zip": "^0.6.1",
     "minecraft-launcher-core": "^3.18.2",
     "msmc": "^5.0.5",
@@ -31,11 +32,13 @@
   "build": {
     "appId": "com.vividp1xels.blazemind",
     "productName": "BlazeMind",
-    "icon": "renderer/icon.png",
+    "icon": "ui/icon.png",
     "files": [
       "main.js",
+      "ai.js",
       "preload.js",
-      "renderer/**",
+      "ui/**",
+      "bridge/**",
       "package.json"
     ],
     "win": {
