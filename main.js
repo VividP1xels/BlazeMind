@@ -15,6 +15,11 @@ const HANDLERS = new Map();
 { const real = ipcMain.handle.bind(ipcMain); ipcMain.handle = (ch, fn) => { HANDLERS.set(ch, fn); return real(ch, fn); }; }
 const invoke = (ch, ...args) => { const h = HANDLERS.get(ch); if (!h) throw new Error('Unknown action ' + ch); return h({ sender: null }, ...args); };
 let AI = null;
+// Send every web request through Chromium's network stack (like Chrome does) instead of Node's.
+// Chromium uses the computer's proxy settings and Windows/Mac certificate store, so it works behind
+// antivirus HTTPS scanning (Avast, AVG, Kaspersky, ESET…), VPNs and school or work networks.
+const nodeFetch = globalThis.fetch;
+globalThis.fetch = (input, init) => (app.isReady() ? net.fetch(input, init) : nodeFetch(input, init));
 
 const UA = 'BlazeMind-Launcher/1.0 (custom Minecraft launcher)';
 const DATA = () => app.getPath('userData');
@@ -121,7 +126,7 @@ async function isOnline() {
   if (!net.isOnline()) return false;
   try { const r = await net.fetch('https://api.modrinth.com/', { method: 'HEAD' }); return r.status < 500; } catch { return false; }
 }
-const isNetErr = e => e instanceof TypeError || /fetch failed|ENOTFOUND|ECONN|ETIMEDOUT|EAI_AGAIN|network/i.test(String(e?.message || e) + String(e?.cause?.code || ''));
+const isNetErr = e => e instanceof TypeError || /fetch failed|ENOTFOUND|ECONN|ETIMEDOUT|EAI_AGAIN|network|net::ERR_/i.test(String(e?.message || e) + String(e?.cause?.code || ''));
 ipcMain.handle('net:online', () => isOnline());
 
 // ---------- Microsoft account ----------
@@ -3243,6 +3248,28 @@ async function dailyBackups() {
 }
 app.whenReady().then(() => { setTimeout(() => dailyBackups().catch(() => {}), 60000); setInterval(() => dailyBackups().catch(() => {}), 3600000); });
 ipcMain.handle('servers:dailyNow', () => dailyBackups());
+
+// ---------- Settings → Repair → Test connection ----------
+ipcMain.handle('net:diagnose', async () => {
+  const sites = [
+    ['Minecraft versions (Mojang)', 'https://piston-meta.mojang.com/mc/game/version_manifest_v2.json'],
+    ['Modrinth (mods & packs)', 'https://api.modrinth.com/v2/tag/game_version'],
+    ['Fabric', 'https://meta.fabricmc.net/v2/versions/game'],
+    ['Microsoft sign-in', 'https://login.live.com/'],
+    ['Claude (Anthropic)', 'https://api.anthropic.com/v1/models'],
+    ['ChatGPT (OpenAI)', 'https://api.openai.com/v1/models'],
+    ['Gemini (Google)', 'https://generativelanguage.googleapis.com/v1beta/openai/models'],
+    ['GitHub (updates)', 'https://api.github.com/repos/VividP1xels/BlazeMind/releases/latest'],
+  ];
+  return Promise.all(sites.map(async ([name, url]) => {
+    const t0 = Date.now();
+    try {
+      const r = await net.fetch(url, { headers: { 'User-Agent': UA } });
+      // 401/403 here just means "reached it, but no key was sent", which is fine
+      return { name, ok: r.status < 500, status: r.status, ms: Date.now() - t0 };
+    } catch (e) { return { name, ok: false, error: String(e?.message || e).slice(0, 160) }; }
+  }));
+});
 
 // ---------- Repair: fix a broken instance or launcher ----------
 ipcMain.handle('repair:instance', async (_e, { id, gameFiles = true, mods = true, loader = true, options = false, cleanup = true }) => {

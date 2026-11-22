@@ -63,6 +63,20 @@ function go(page) {
   ({ home: pageHome, library: pageLibrary, discover: pageDiscover, create: pageCreate, servers: pageServers, settings: pageSettings })[page]?.();
 }
 const P = () => $('#page');
+// Minecraft versions for a <select>. If Mojang can't be reached, use a built-in list so nothing is ever empty.
+const FALLBACK_VERSIONS = ['1.21.8', '1.21.7', '1.21.6', '1.21.5', '1.21.4', '1.21.3', '1.21.1', '1.21', '1.20.6', '1.20.4', '1.20.2', '1.20.1', '1.19.4', '1.19.2', '1.18.2', '1.17.1', '1.16.5', '1.12.2', '1.8.9'];
+let versionCache = null;
+async function mcVersions() {
+  if (versionCache) return versionCache;
+  try { const v = (await lab.versions(false)).map(x => x.id); if (v.length) return (versionCache = v); } catch {}
+  return FALLBACK_VERSIONS;
+}
+async function fillVersions(sel, { pick, any, label = x => x } = {}) {
+  if (!sel) return [];
+  const v = (await mcVersions()).slice(0, 80);
+  sel.innerHTML = (any ? `<option value="">${any}</option>` : '') + v.map(x => `<option value="${esc(x)}" ${x === pick ? 'selected' : ''}>${esc(label(x))}</option>`).join('');
+  return v;
+}
 
 // ---------- home ----------
 const IDEAS = ['Build me a small castle where I\'m standing', 'Make a horror modpack for 1.20.1', 'Give me a flaming netherite sword', 'Paint the diamond a deep red color', 'Make it night with a thunderstorm', 'Add a recipe: 9 rotten flesh → 1 leather', 'Why did my game crash?', 'Install Sodium and Iris with a nice shader'];
@@ -117,10 +131,9 @@ async function newInstance() {
   m.querySelectorAll('[data-l]').forEach(b => b.onclick = () => { if (b.disabled) return; loader = b.dataset.l; m.querySelectorAll('[data-l]').forEach(x => x.classList.toggle('on', x === b)); });
   const bridges = await lab.ai.bridgeVersions().catch(() => []);
   try {
-    const vers = await lab.versions(false);
     const sel = m.querySelector('#n-ver');
-    sel.innerHTML = vers.slice(0, 80).map(v => `<option value="${esc(v.id)}">${esc(v.id)}${bridges.includes(v.id) ? '  ✦ in-game AI' : ''}</option>`).join('');
-    const best = vers.find(v => bridges.includes(v.id)); if (best) sel.value = best.id;
+    const vers = await fillVersions(sel, { label: x => x + (bridges.includes(x) ? '  ✦ in-game AI' : '') });
+    const best = vers.find(v => bridges.includes(v)); if (best) sel.value = best;
     const check = async () => {
       m.querySelector('#n-hint').textContent = 'Checking loaders…';
       let sup = {}; try { sup = await lab.loaders(sel.value); } catch {}
@@ -333,7 +346,7 @@ function pageDiscover() {
     <div class="status" id="d-prog"></div>
     <div class="results" id="d-res"></div>
     <div style="text-align:center;margin-top:16px"><button class="btn hidden" id="d-more">Load more</button></div>`;
-  lab.versions(false).then(v => { const sel = $('#d-ver'); if (!sel) return; sel.innerHTML = '<option value="">All versions</option>' + v.slice(0, 70).map(x => `<option ${x.id === (inst?.mcVersion || D.ver) ? 'selected' : ''}>${esc(x.id)}</option>`).join(''); }).catch(() => {});
+  fillVersions($('#d-ver'), { any: 'All versions', pick: inst?.mcVersion || D.ver });
   $$('#d-src button').forEach(b => b.onclick = () => { D.source = b.dataset.s; D.offset = 0; pageDiscover(); });
   $$('.kind').forEach(b => b.onclick = () => { D.kind = b.dataset.k; D.offset = 0; D.q = ''; pageDiscover(); });
   $('#d-inst') && ($('#d-inst').onchange = () => { D.inst = $('#d-inst').value; D.offset = 0; pageDiscover(); });
@@ -350,7 +363,7 @@ async function discoverSearch(more) {
     const r = await lab.searchMods({ source: D.source, query: D.q, type: D.kind, sort: D.sort || undefined, offset: D.offset,
       mcVersion: inst?.mcVersion || D.ver || undefined, loader: D.kind === 'mod' || D.kind === 'modpack' ? (inst?.loader !== 'vanilla' && inst?.loader) || D.loader || undefined : undefined });
     D.hits = more ? D.hits.concat(r.hits || []) : (r.hits || []);
-    res.innerHTML = (r.offline ? '<p class="tiny full">Offline: showing things saved on this computer. Installing needs internet.</p>' : '') + (D.hits.map((h, n) => `
+    res.innerHTML = (r.offline ? `<p class="tiny full err">Couldn't reach ${D.source === 'curseforge' ? 'CurseForge' : 'Modrinth'}, so this only shows things saved on this computer. Check Settings → Repair BlazeMind → Test connection.</p>` : '') + (D.hits.map((h, n) => `
       <div class="rcard" data-n="${n}">
         <div class="rtop">${h.icon ? `<img src="${esc(h.icon)}" alt="" loading="lazy">` : '<div class="ph"></div>'}<div class="t"><b>${esc(h.title)}</b><small>${h.author ? 'by ' + esc(h.author) + ' · ' : ''}⬇ ${fmtNum(h.downloads)}</small></div></div>
         <p>${esc(h.description)}</p>
@@ -432,7 +445,7 @@ function pageCreate() {
     <h3 class="section-title">AI CREATIONS</h3>
     <div class="studio">${AI_TOOLS.map((x, n) => `<div class="tool" data-n="${n}"><div class="big-ico">${x.ico}</div><h3>${x.t}</h3><p>${x.d}</p></div>`).join('')}</div>`;
   $$('.tool').forEach(c => c.onclick = () => { const x = AI_TOOLS[c.dataset.n]; const ta = $('#mind-text'); showMind(); ta.value = x.p; ta.focus(); });
-  lab.versions(false).then(v => { $('#mp-ver').innerHTML = v.slice(0, 60).map(x => `<option>${esc(x.id)}</option>`).join(''); }).catch(() => { $('#mp-ver').innerHTML = '<option>1.21.1</option>'; });
+  fillVersions($('#mp-ver'), { pick: '1.21.1' });
   const renderPicked = () => { $('#mp-picked').innerHTML = mpPick.map((m, n) => `<span class="chip">${esc(m.title)} <a href="#" data-x="${n}">✕</a></span>`).join('') || '<span class="tiny">No mods picked yet.</span>'; $$('[data-x]').forEach(a => a.onclick = e => { e.preventDefault(); mpPick.splice(a.dataset.x, 1); renderPicked(); }); };
   renderPicked();
   $('#mp-form').onsubmit = async e => {
@@ -509,7 +522,7 @@ async function newServer(info) {
     <div class="end"><button class="btn" id="ns-x">Cancel</button><button class="btn hot" id="ns-ok">Create</button></div>`);
   m.querySelector('#ns-x').onclick = closeModal;
   m.querySelector('#ns-ram').oninput = e => { m.querySelector('#ns-ramv').textContent = e.target.value; };
-  lab.versions(false).then(v => { m.querySelector('#ns-ver').innerHTML = v.slice(0, 60).map(x => `<option>${esc(x.id)}</option>`).join(''); }).catch(() => {});
+  fillVersions(m.querySelector('#ns-ver'), { pick: '1.21.1' });
   m.querySelector('#ns-from').onchange = e => { const i = S.instances.find(x => x.id === e.target.value); if (i) { m.querySelector('#ns-ver').value = i.mcVersion; m.querySelector('#ns-load').value = i.loader === 'quilt' ? 'fabric' : i.loader === 'vanilla' ? 'paper' : i.loader; } };
   m.querySelector('#ns-ok').onclick = async () => {
     const b = m.querySelector('#ns-ok'); b.disabled = true; b.textContent = 'Creating…';
@@ -554,7 +567,7 @@ async function pageSettings() {
         <label class="switch"><input type="checkbox" id="rl-java"> Download Java again</label>
         <label class="switch"><input type="checkbox" id="rl-game"> Download all Minecraft game files again</label>
         <label class="switch"><input type="checkbox" id="rl-sign"> Sign out and back in (fixes login problems)</label>
-        <div class="row" style="margin-top:16px"><button class="btn hot" id="rl-go">Repair launcher</button></div>
+        <div class="row" style="margin-top:16px"><button class="btn hot" id="rl-go">Repair launcher</button><button class="btn" id="rl-net">Test connection</button></div>
         <div id="rl-out" class="tiny" style="margin-top:10px"></div>
         <h3 style="font-size:16px;margin-top:26px">Free up space</h3>
         <div id="st-list" class="tiny">Checking…</div>
@@ -576,7 +589,13 @@ async function pageSettings() {
     if ($('#s-key')?.value) d.key = $('#s-key').value;
     await lab.ai.saveSettings(d); refreshMindHeader();
   };
-  $('#s-ai-save').onclick = async () => { await saveAI(); toast('AI settings saved', 'good'); pageSettings(); };
+  $('#s-ai-save').onclick = async () => {
+    const k = $('#s-key')?.value.trim();
+    await saveAI();
+    if (k && prov === 'claude') { const r = await lab.ai.checkKey(); toast(r.ok ? '✓ Saved, and the key works' : r.text, r.ok ? 'good' : 'bad'); }
+    else toast('AI settings saved', 'good');
+    pageSettings();
+  };
   $('#s-ai-check').onclick = async () => {
     const out = $('#s-ai-result'); out.className = 'tiny'; out.textContent = 'Checking…';
     try { await saveAI(); const r = await lab.ai.checkKey(); out.className = r.ok ? 'tiny' : 'tiny err'; out.style.color = r.ok ? 'var(--ok)' : ''; out.textContent = (r.ok ? '✓ ' : '✕ ') + r.text; }
@@ -593,6 +612,12 @@ async function pageSettings() {
       out.innerHTML = '<b style="color:var(--ok)">✓ Done.</b><br>' + rep.map(esc).join('<br>');
       if ($('#rl-sign').checked) setTimeout(() => location.reload(), 1500);
     } catch (e) { out.innerHTML = `<span class="err">${esc(errText(e))}</span>`; }
+  };
+  $('#rl-net').onclick = async () => {
+    const out = $('#rl-out'); out.textContent = 'Testing…';
+    const r = await lab.diagnose();
+    out.innerHTML = r.map(x => `${x.ok ? '<span style="color:var(--ok)">✓</span>' : '<span class="err">✕</span>'} ${esc(x.name)}: ${x.ok ? `reached (${x.ms} ms)` : esc(x.error || 'HTTP ' + x.status)}`).join('<br>')
+      + (r.some(x => !x.ok) ? '<br><br>Anything with ✕ is blocked on this computer. Usually it\'s an antivirus "web shield" / HTTPS scanning, a VPN, or a school or work network. Allow BlazeMind in that program, or try another network.' : '<br><br><b style="color:var(--ok)">Everything is reachable.</b>');
   };
   const mb = n => n > 1073741824 ? (n / 1073741824).toFixed(1) + ' GB' : (n / 1048576).toFixed(0) + ' MB';
   lab.storage.scan().then(r => {

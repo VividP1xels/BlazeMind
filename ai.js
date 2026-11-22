@@ -309,7 +309,7 @@ module.exports = function setupAI(d) {
     if (e?.status === 403) return `The AI service refused (403): ${apiMessage(e)}`;
     if (e?.status === 429) return 'The AI service says you\'ve hit a limit or run out of credit. Wait a bit or check your account.';
     if (/ECONNREFUSED.*11434|11434/.test(s)) return 'Ollama isn\'t running. Start Ollama, or pick another AI in Settings → AI.';
-    if (/fetch failed|ENOTFOUND|EAI_AGAIN|ETIMEDOUT|ECONNREFUSED|Connection error/i.test(s)) return 'Can\'t reach the AI service. Are you offline? (Ollama works without internet.)';
+    if (/fetch failed|ENOTFOUND|EAI_AGAIN|ETIMEDOUT|ECONNREFUSED|Connection error|net::ERR/i.test(s)) return `Can't reach the AI service (${(s.match(/net::ERR_[A-Z_]+/) || [e?.cause?.code || s.slice(0, 120)])[0]}). Check your internet, VPN or antivirus web shield, then try Settings → Repair → Test connection.`;
     return (e?.status ? `Error ${e.status}: ` : '') + apiMessage(e);
   }
   // Pull the service's own explanation out of an SDK or HTTP error
@@ -324,9 +324,9 @@ module.exports = function setupAI(d) {
     if (PROVIDERS[c.provider].needsKey && !key) return { ok: false, text: 'No key saved for this AI yet.' };
     try {
       if (c.provider === 'claude') {
-        if (!/^sk-ant-api/.test(key)) return { ok: false, text: keyShapeHint(key) };
+        if (!claudeKeyOk(key)) return { ok: false, text: keyShapeHint(key) };
         const sdk = require('@anthropic-ai/sdk'); const Anthropic = sdk.default || sdk;
-        const client = new Anthropic({ apiKey: key, authToken: null });
+        const client = new Anthropic({ apiKey: key, authToken: null, fetch: (...a) => globalThis.fetch(...a) });
         const models = []; for await (const m of client.models.list({ limit: 100 })) models.push(m.id);
         const has = models.includes(c.model);
         return { ok: true, text: `Key works. ${has ? `Model ${c.model} is available.` : `But your account doesn't list "${c.model}". Available: ${models.slice(0, 8).join(', ')}`}` };
@@ -336,9 +336,15 @@ module.exports = function setupAI(d) {
       if (!res.ok) return { ok: false, text: `Error ${res.status}: ${j?.error?.message || 'the service refused'}` };
       const ids = (j.data || []).map(m => m.id);
       return { ok: true, text: `Key works.${ids.length && !ids.includes(c.model) ? ` "${c.model}" isn't in your list. Some available: ${ids.slice(0, 8).join(', ')}` : ''}` };
-    } catch (e) { return { ok: false, text: friendlyError(e) }; }
+    } catch (e) { return { ok: false, text: friendlyError(e) + (e?.status === 401 && c.provider === 'claude' ? ' ' + keyInfo(key) : '') }; }
   });
+  // Real Claude API keys are about 108 characters. The console's key list only shows a short preview with "..."
+  const claudeKeyOk = key => /^sk-ant-api\d*-[A-Za-z0-9_-]{60,}$/.test(key);
+  const keyInfo = key => `The key BlazeMind has saved is ${key.length} characters long and ends in "…${key.slice(-4)}".`;
   function keyShapeHint(key) {
+    if (!key) return 'No Claude key is saved yet. Paste it in Settings → AI and press Save.';
+    if (/^sk-ant-api/.test(key) && /\.\.|…|\*/.test(key)) return `That's only the short preview of a key from the console's key list (it has "..." in it), so it can't work. ${keyInfo(key)} At console.anthropic.com → API keys, press "Create Key" and copy the whole key right away (it's only shown once, about 108 characters).`;
+    if (/^sk-ant-api/.test(key)) return `That key looks cut off. ${keyInfo(key)} A full Claude key is about 108 characters. Copy it again, or make a new one at console.anthropic.com → API keys.`;
     if (/^sk-ant-oat/.test(key)) return 'That\'s a Claude subscription login token (sk-ant-oat…), not an API key. Make an API key at console.anthropic.com → API keys (it starts with sk-ant-api).';
     if (/^sk-ant-admin/.test(key)) return 'That\'s an Admin key. Make a normal API key at console.anthropic.com → API keys (it starts with sk-ant-api).';
     if (/^sk-(proj-)?[A-Za-z0-9]/.test(key) && !/^sk-ant/.test(key)) return 'That looks like an OpenAI (ChatGPT) key. Pick "ChatGPT (OpenAI)" as the AI service, or make a Claude key at console.anthropic.com.';
@@ -383,8 +389,8 @@ module.exports = function setupAI(d) {
   async function turnClaude(userText, c, key) {
     const sdk = require('@anthropic-ai/sdk');
     const Anthropic = sdk.default || sdk;
-    const client = new Anthropic({ apiKey: key, authToken: null });
-    if (!/^sk-ant-api/.test(key)) throw Object.assign(new Error(keyShapeHint(key)), { blaze: true });
+    const client = new Anthropic({ apiKey: key, authToken: null, fetch: (...a) => globalThis.fetch(...a) });
+    if (!claudeKeyOk(key)) throw Object.assign(new Error(keyShapeHint(key)), { blaze: true });
     const start = convo.messages.length;
     convo.messages.push({ role: 'user', content: userText });
     const tools = TOOLS.map(t => ({ name: t.name, description: t.description, input_schema: t.input_schema }));
@@ -406,7 +412,7 @@ module.exports = function setupAI(d) {
         }
       } catch (e) {
         convo.messages.length = start;
-        if (e instanceof Anthropic.AuthenticationError) throw Object.assign(new Error(`Anthropic rejected the key: ${apiMessage(e)}. Check it in Settings → AI → Check key (make sure you copied the whole key, and that it wasn't deleted).`), { blaze: true });
+        if (e instanceof Anthropic.AuthenticationError) throw Object.assign(new Error(`Anthropic rejected the key: ${apiMessage(e)}. ${keyInfo(key)} Compare that with the key in console.anthropic.com → API keys: if it was deleted or doesn't match, make a new key and paste the whole thing.`), { blaze: true });
         if (e instanceof Anthropic.PermissionDeniedError) throw Object.assign(new Error(`Anthropic refused: ${apiMessage(e)}`), { blaze: true });
         if (e instanceof Anthropic.RateLimitError) throw Object.assign(new Error('Claude is rate-limited right now. Try again in a moment.'), { blaze: true });
         if (e instanceof Anthropic.NotFoundError) throw Object.assign(new Error(`Claude doesn't know the model "${c.model}". Change it in Settings → AI.`), { blaze: true });

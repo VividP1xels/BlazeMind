@@ -192,6 +192,7 @@ contextBridge.exposeInMainWorld('lab', {
   onInstancesChanged: on('instances:changed'),
   repairInstance: d => invoke('repair:instance', d),
   repairLauncher: d => invoke('repair:launcher', d),
+  diagnose: () => invoke('net:diagnose'),
   ai: {
     settings: () => invoke('ai:settings'),
     saveSettings: d => invoke('ai:saveSettings', d),
